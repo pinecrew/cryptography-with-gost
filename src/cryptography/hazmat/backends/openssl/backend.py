@@ -287,6 +287,9 @@ class Backend:
     def ed25519_supported(self) -> bool:
         return True
 
+    def gost_supported(self) -> bool:
+        return rust_openssl._gost_provider_loaded
+
     def ed448_supported(self) -> bool:
         return (
             not rust_openssl.CRYPTOGRAPHY_IS_LIBRESSL

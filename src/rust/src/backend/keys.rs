@@ -223,6 +223,16 @@ fn private_key_from_pkey<'p>(
                 }
             }
         }
+        #[cfg(not(any(
+            CRYPTOGRAPHY_IS_LIBRESSL,
+            CRYPTOGRAPHY_IS_BORINGSSL,
+            CRYPTOGRAPHY_IS_AWSLC
+        )))]
+        _ if cryptography_openssl::gost::is_gost_pkey(pkey) => {
+            Ok(crate::backend::gost::private_key_from_pkey(pkey)
+                .into_pyobject(py)?
+                .into_any())
+        }
         _ => Err(CryptographyError::from(
             exceptions::UnsupportedAlgorithm::new_err("Unsupported key type."),
         )),
@@ -421,6 +431,16 @@ fn public_key_from_pkey<'p>(
                         .into_any())
                 }
             }
+        }
+        #[cfg(not(any(
+            CRYPTOGRAPHY_IS_LIBRESSL,
+            CRYPTOGRAPHY_IS_BORINGSSL,
+            CRYPTOGRAPHY_IS_AWSLC
+        )))]
+        _ if cryptography_openssl::gost::is_gost_pkey(pkey) => {
+            Ok(crate::backend::gost::public_key_from_pkey(pkey)
+                .into_pyobject(py)?
+                .into_any())
         }
         _ => Err(CryptographyError::from(
             exceptions::UnsupportedAlgorithm::new_err("Unsupported key type."),

@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import (
     ec,
     ed448,
     ed25519,
+    gost,
     mldsa,
     mlkem,
     rsa,
@@ -23,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric import (
 # importing this module doesn't trigger the FFDH deprecation warning.
 PublicKeyTypes = typing.Union[
     dh._DHPublicKey,
+    gost.GostPublicKey,
     dsa.DSAPublicKey,
     rsa.RSAPublicKey,
     ec.EllipticCurvePublicKey,
@@ -39,6 +41,7 @@ PublicKeyTypes = typing.Union[
 # Every asymmetric key type
 PrivateKeyTypes = typing.Union[
     dh._DHPrivateKey,
+    gost.GostPrivateKey,
     ed25519.Ed25519PrivateKey,
     ed448.Ed448PrivateKey,
     mldsa.MLDSA44PrivateKey,

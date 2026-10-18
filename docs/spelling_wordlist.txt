@@ -35,6 +35,7 @@ criticalities
 crypto
 cryptographic
 cryptographically
+CryptoPro
 Cygwin
 de
 Debian
@@ -77,6 +78,7 @@ FIPS
 Gaynor
 GiB
 Google
+gostprov
 Graviola
 hasher
 hazmat
@@ -103,6 +105,7 @@ kibibytes
 Koblitz
 Lange
 lede
+libcrypto
 logins
 Mbed
 metadata
@@ -186,5 +189,6 @@ versioning
 wildcard
 WoSign
 Wycheproof
+XchA
 Xcode
 XEX

@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import (
     ec,
     ed448,
     ed25519,
+    gost,
     rsa,
 )
 from cryptography.hazmat.primitives.ciphers.modes import CBC
@@ -458,7 +459,7 @@ class TestPKCS12Creation:
                 b"name", cert, cert, None, encryption
             )
         assert str(exc.value) == (
-            "Key must be RSA, DSA, EllipticCurve, ED25519, or ED448"
+            "Key must be RSA, DSA, EllipticCurve, ED25519, ED448 or GOST"
             " private key, or None."
         )
         with pytest.raises(TypeError) as exc:
@@ -1180,3 +1181,121 @@ class TestPKCS12Objects:
             f"additional_certs=["
             f"<PKCS12Certificate({cert2}, friendly_name=b'name2')>])>"
         )
+
+
+def _gost_supported_with_rc2(backend):
+    # CryptoPro CSP encrypts the certificates with RC2-40.
+    return backend.gost_supported() and backend.cipher_supported(
+        RC2(b"0" * 16), CBC(b"0" * 8)
+    )
+
+
+def _load_gost_chain():
+    def load(name):
+        return load_vectors_from_file(
+            os.path.join("x509", "custom", "gost", name),
+            lambda f: f.read(),
+            mode="rb",
+        )
+
+    root, ca, leaf = (
+        x509.load_pem_x509_certificate(load(f"{name}.pem"))
+        for name in ("root", "ca", "leaf")
+    )
+    key = load_pem_private_key(load("leaf-key.pem"), None)
+    assert isinstance(key, gost.GostPrivateKey)
+    return key, leaf, [root, ca]
+
+
+# Files in the format exported by CryptoPro CSP (key bag PBE
+# 1.2.840.113549.1.12.1.80), see docs/development/custom-vectors/gost.
+_CRYPTOPRO_CONTAINERS = [
+    ("cryptopro-ascii.pfx", "cryptography"),
+    ("cryptopro-cyrillic.pfx", "Пароль-тест"),
+    ("cryptopro-non-bmp.pfx", "пароль-\U0001f511"),
+    ("cryptopro-empty-password.pfx", ""),
+]
+
+
+@pytest.mark.skip_fips(reason="GOST is not available in FIPS mode")
+@pytest.mark.supported(
+    only_if=_gost_supported_with_rc2,
+    skip_message="Requires the gostprov OpenSSL provider and RC2",
+)
+class TestPKCS12CryptoPro:
+    @staticmethod
+    def _data(filename):
+        return load_vectors_from_file(
+            os.path.join("pkcs12", "cryptopro", filename),
+            lambda f: f.read(),
+            mode="rb",
+        )
+
+    @pytest.mark.parametrize(("filename", "password"), _CRYPTOPRO_CONTAINERS)
+    def test_load_key_and_certificates(self, filename, password, backend):
+        key, cert, additional_certs = _load_gost_chain()
+        parsed_key, parsed_cert, parsed_more_certs = load_key_and_certificates(
+            self._data(filename), password.encode()
+        )
+        assert isinstance(parsed_key, gost.GostPrivateKey)
+        assert parsed_key.private_bytes(
+            Encoding.DER, PrivateFormat.PKCS8, serialization.NoEncryption()
+        ) == key.private_bytes(
+            Encoding.DER, PrivateFormat.PKCS8, serialization.NoEncryption()
+        )
+        assert parsed_cert == cert
+        assert parsed_more_certs == additional_certs
+        cert.public_key().verify(parsed_key.sign(b"data"), b"data")
+
+    @pytest.mark.parametrize(("filename", "password"), _CRYPTOPRO_CONTAINERS)
+    def test_load_pkcs12(self, filename, password, backend):
+        key, cert, additional_certs = _load_gost_chain()
+        p12 = load_pkcs12(self._data(filename), password.encode())
+        assert isinstance(p12.key, gost.GostPrivateKey)
+        assert p12.key.public_key() == key.public_key()
+        assert p12.cert is not None
+        assert p12.cert.certificate == cert
+        assert [c.certificate for c in p12.additional_certs] == (
+            additional_certs
+        )
+
+    @pytest.mark.parametrize(("filename", "password"), _CRYPTOPRO_CONTAINERS)
+    def test_load_wrong_password(self, filename, password, backend):
+        with pytest.raises(ValueError):
+            load_key_and_certificates(
+                self._data(filename), password.encode() + b"x"
+            )
+
+    @pytest.mark.parametrize(
+        ("encryption", "password"),
+        [
+            (serialization.NoEncryption(), None),
+            (serialization.BestAvailableEncryption(b"password"), b"password"),
+        ]
+        + [
+            (
+                serialization.PrivateFormat.PKCS12.encryption_builder()
+                .kdf_rounds(2000)
+                .key_cert_algorithm(algorithm)
+                .hmac_hash(hashes.SHA256())
+                .build(b"password"),
+                b"password",
+            )
+            for algorithm in (
+                PBES.PBESv1SHA1And3KeyTripleDESCBC,
+                PBES.PBESv2SHA256AndAES256CBC,
+            )
+        ],
+    )
+    def test_serialize_roundtrip(self, encryption, password, backend):
+        key, cert, additional_certs = _load_gost_chain()
+        p12 = serialize_key_and_certificates(
+            b"gost", key, cert, additional_certs, encryption
+        )
+        parsed_key, parsed_cert, parsed_more_certs = load_key_and_certificates(
+            p12, password
+        )
+        assert isinstance(parsed_key, gost.GostPrivateKey)
+        assert parsed_key.public_key() == key.public_key()
+        assert parsed_cert == cert
+        assert parsed_more_certs == additional_certs

@@ -251,6 +251,13 @@ mod _rust {
         )))]
         #[pymodule_export]
         use crate::backend::ed448::ed448;
+        #[cfg(not(any(
+            CRYPTOGRAPHY_IS_LIBRESSL,
+            CRYPTOGRAPHY_IS_BORINGSSL,
+            CRYPTOGRAPHY_IS_AWSLC
+        )))]
+        #[pymodule_export]
+        use crate::backend::gost::gost;
         #[pymodule_export]
         use crate::backend::hashes::hashes;
         #[pymodule_export]

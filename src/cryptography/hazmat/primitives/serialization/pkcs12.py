@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import (
     ec,
     ed448,
     ed25519,
+    gost,
     rsa,
 )
 from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
@@ -37,6 +38,7 @@ PKCS12PrivateKeyTypes = typing.Union[
     ec.EllipticCurvePrivateKey,
     ed25519.Ed25519PrivateKey,
     ed448.Ed448PrivateKey,
+    gost.GostPrivateKey,
 ]
 
 
@@ -58,10 +60,11 @@ class PKCS12KeyAndCertificates:
                 ec.EllipticCurvePrivateKey,
                 ed25519.Ed25519PrivateKey,
                 ed448.Ed448PrivateKey,
+                gost.GostPrivateKey,
             ),
         ):
             raise TypeError(
-                "Key must be RSA, DSA, EllipticCurve, ED25519, or ED448"
+                "Key must be RSA, DSA, EllipticCurve, ED25519, ED448 or GOST"
                 " private key, or None."
             )
         if cert is not None and not isinstance(cert, PKCS12Certificate):
@@ -153,10 +156,11 @@ def serialize_key_and_certificates(
             ec.EllipticCurvePrivateKey,
             ed25519.Ed25519PrivateKey,
             ed448.Ed448PrivateKey,
+            gost.GostPrivateKey,
         ),
     ):
         raise TypeError(
-            "Key must be RSA, DSA, EllipticCurve, ED25519, or ED448"
+            "Key must be RSA, DSA, EllipticCurve, ED25519, ED448 or GOST"
             " private key, or None."
         )
 
