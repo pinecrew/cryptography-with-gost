@@ -8,6 +8,12 @@
 pub mod aead;
 pub mod cmac;
 pub mod fips;
+#[cfg(not(any(
+    CRYPTOGRAPHY_IS_LIBRESSL,
+    CRYPTOGRAPHY_IS_BORINGSSL,
+    CRYPTOGRAPHY_IS_AWSLC
+)))]
+pub mod gost;
 pub mod hmac;
 #[cfg(any(
     CRYPTOGRAPHY_IS_BORINGSSL,
