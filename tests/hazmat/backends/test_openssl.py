@@ -4,6 +4,9 @@
 
 
 import itertools
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -215,3 +218,36 @@ class TestRSAPEMSerialization:
                 serialization.PrivateFormat.PKCS8,
                 serialization.BestAvailableEncryption(password),
             )
+
+
+def _gost_provider_loaded(env):
+    # Providers are loaded once per process, so check in a fresh one.
+    argv = [
+        sys.executable,
+        "-c",
+        "from cryptography.hazmat.bindings._rust import openssl; "
+        "print(openssl._gost_provider_loaded)",
+    ]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), **env}
+    return subprocess.check_output(argv, env=env, text=True).strip()
+
+
+@pytest.mark.skipif(
+    rust_openssl.CRYPTOGRAPHY_IS_LIBRESSL
+    or rust_openssl.CRYPTOGRAPHY_IS_BORINGSSL
+    or rust_openssl.CRYPTOGRAPHY_IS_AWSLC,
+    reason="The gostprov provider is only loaded with OpenSSL",
+)
+class TestGostProvider:
+    def test_disabled_by_environment(self):
+        assert (
+            _gost_provider_loaded({"CRYPTOGRAPHY_OPENSSL_NO_GOST": "1"})
+            == "False"
+        )
+
+    def test_missing_provider_is_not_an_error(self, tmp_path):
+        # An empty modules directory: the import must still succeed.
+        assert _gost_provider_loaded({"OPENSSL_MODULES": str(tmp_path)}) in (
+            "True",
+            "False",
+        )

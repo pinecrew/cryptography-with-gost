@@ -64,6 +64,7 @@ CRYPTOGRAPHY_OPENSSL_350_OR_GREATER: bool
 class Providers: ...
 
 _legacy_provider_loaded: bool
+_gost_provider_loaded: bool
 _providers: Providers
 
 def openssl_version() -> int: ...

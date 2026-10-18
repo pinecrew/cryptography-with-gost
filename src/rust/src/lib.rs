@@ -56,6 +56,7 @@ mod x509;
 struct LoadedProviders {
     legacy: Option<provider::Provider>,
     _default: provider::Provider,
+    _gost: Option<provider::Provider>,
 
     fips: Option<provider::Provider>,
 }
@@ -105,9 +106,24 @@ fn _initialize_providers(py: pyo3::Python<'_>) -> CryptographyResult<LoadedProvi
         None
     };
     let _default = provider::Provider::load(None, "default")?;
+    // GOST algorithms come from the external `gostprov` provider
+    // (https://github.com/gost-engine/engine). Load it when it is installed
+    // in the OpenSSL modules directory (or `OPENSSL_MODULES`), unless
+    // disabled with CRYPTOGRAPHY_OPENSSL_NO_GOST.
+    let load_gost =
+        !env::var("CRYPTOGRAPHY_OPENSSL_NO_GOST").is_ok_and(|v| !v.is_empty() && v != "0");
+    let gost = if load_gost {
+        let result = provider::Provider::try_load(None, "gostprov", true);
+        // A missing provider is not an error, drop the error queue entries.
+        openssl::error::ErrorStack::get();
+        result.ok()
+    } else {
+        None
+    };
     Ok(LoadedProviders {
         legacy,
         _default,
+        _gost: gost,
         fips: None,
     })
 }
@@ -303,10 +319,12 @@ mod _rust {
                     } else {
                         openssl_mod.add("_legacy_provider_loaded", false)?;
                     }
+                    openssl_mod.add("_gost_provider_loaded", providers._gost.is_some())?;
                     openssl_mod.add("_providers", providers)?;
                 } else {
                     // default value for non-OpenSSL implementations
                     openssl_mod.add("_legacy_provider_loaded", false)?;
+                    openssl_mod.add("_gost_provider_loaded", false)?;
                 }
             }
             cfg_if::cfg_if! {
