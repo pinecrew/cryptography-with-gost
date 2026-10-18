@@ -1299,3 +1299,95 @@ class TestPKCS12CryptoPro:
         assert parsed_key.public_key() == key.public_key()
         assert parsed_cert == cert
         assert parsed_more_certs == additional_certs
+
+
+def _der_oid(dotted: str) -> bytes:
+    arcs = [int(arc) for arc in dotted.split(".")]
+    body = bytearray()
+    for arc in [arcs[0] * 40 + arcs[1], *arcs[2:]]:
+        encoded = [arc & 0x7F]
+        arc >>= 7
+        while arc:
+            encoded.append(0x80 | (arc & 0x7F))
+            arc >>= 7
+        body += bytes(reversed(encoded))
+    return bytes([0x06, len(body)]) + bytes(body)
+
+
+# RFC 9548 algorithms and the OIDs of their ciphers.
+_GOST_PBES = [
+    (PBES.PBESv2Streebog512AndKuznyechikCTRACPKM, "1.2.643.7.1.1.5.2.1"),
+    (PBES.PBESv2Streebog512AndMagmaCTRACPKM, "1.2.643.7.1.1.5.1.1"),
+]
+
+
+@pytest.mark.skip_fips(reason="GOST is not available in FIPS mode")
+@pytest.mark.supported(
+    only_if=lambda backend: backend.gost_supported(),
+    skip_message="Requires the gostprov OpenSSL provider",
+)
+class TestPKCS12GostEncryption:
+    # RFC 9548 (PKCS#12 with GOST algorithms, RFC 9337 PBES2).
+    PASSWORD = "Пароль для PFX".encode()
+
+    def _serialize(self, algorithm, kdf_rounds=2048):
+        key, cert, additional_certs = _load_gost_chain()
+        encryption = (
+            serialization.PrivateFormat.PKCS12.encryption_builder()
+            .kdf_rounds(kdf_rounds)
+            .key_cert_algorithm(algorithm)
+            .build(self.PASSWORD)
+        )
+        return serialize_key_and_certificates(
+            b"gost", key, cert, additional_certs, encryption
+        )
+
+    @pytest.mark.parametrize(("algorithm", "cipher_oid"), _GOST_PBES)
+    def test_roundtrip(self, algorithm, cipher_oid, backend):
+        key, cert, additional_certs = _load_gost_chain()
+        p12 = self._serialize(algorithm)
+        parsed_key, parsed_cert, parsed_more_certs = load_key_and_certificates(
+            p12, self.PASSWORD
+        )
+        assert isinstance(parsed_key, gost.GostPrivateKey)
+        assert parsed_key.public_key() == key.public_key()
+        assert parsed_cert == cert
+        assert parsed_more_certs == additional_certs
+        cert.public_key().verify(parsed_key.sign(b"data"), b"data")
+
+    @pytest.mark.parametrize(("algorithm", "cipher_oid"), _GOST_PBES)
+    def test_algorithms(self, algorithm, cipher_oid, backend):
+        p12 = self._serialize(algorithm)
+        for oid in [
+            "1.2.840.113549.1.5.13",  # PBES2
+            "1.2.840.113549.1.5.12",  # PBKDF2
+            "1.2.643.7.1.1.4.2",  # HMAC GOST R 34.11-2012 (512 bit), PRF
+            "1.2.643.7.1.1.2.3",  # GOST R 34.11-2012 (512 bit), MAC
+            cipher_oid,
+        ]:
+            assert _der_oid(oid) in p12
+        for oid in [
+            "1.3.14.3.2.26",  # SHA-1
+            "1.2.840.113549.2.9",  # HMAC-SHA256
+            "2.16.840.1.101.3.4.1.42",  # AES-256-CBC
+        ]:
+            assert _der_oid(oid) not in p12
+
+    @pytest.mark.parametrize(("algorithm", "cipher_oid"), _GOST_PBES)
+    def test_wrong_password(self, algorithm, cipher_oid, backend):
+        p12 = self._serialize(algorithm, kdf_rounds=1000)
+        with pytest.raises(ValueError):
+            load_key_and_certificates(p12, b"wrong password")
+
+    def test_hmac_hash_unsupported(self, backend):
+        key, cert, additional_certs = _load_gost_chain()
+        encryption = (
+            serialization.PrivateFormat.PKCS12.encryption_builder()
+            .key_cert_algorithm(PBES.PBESv2Streebog512AndKuznyechikCTRACPKM)
+            .hmac_hash(hashes.SHA256())
+            .build(self.PASSWORD)
+        )
+        with pytest.raises(ValueError):
+            serialize_key_and_certificates(
+                b"gost", key, cert, additional_certs, encryption
+            )

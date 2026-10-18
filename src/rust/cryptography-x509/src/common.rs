@@ -193,8 +193,24 @@ pub enum AlgorithmParameters<'a> {
     #[defined_by(oid::PBE_WITH_SHA_AND_40_BIT_RC2_CBC)]
     PbeWithShaAnd40BitRc2Cbc(Pkcs12PbeParams<'a>),
 
+    // RFC 9337 / RFC 9548 (GOST password-based encryption for PFX)
+    #[defined_by(oid::GOST_R3411_2012_512_OID)]
+    GostR3411_2012_512(Option<asn1::Null>),
+    #[defined_by(oid::HMAC_GOST_R3411_2012_512_OID)]
+    HmacWithGostR3411_2012_512(Option<asn1::Null>),
+    #[defined_by(oid::MAGMA_CTR_ACPKM_OID)]
+    MagmaCtrAcpkm(Gost3412EncryptionParams<'a>),
+    #[defined_by(oid::KUZNYECHIK_CTR_ACPKM_OID)]
+    KuznyechikCtrAcpkm(Gost3412EncryptionParams<'a>),
+
     #[default]
     Other(asn1::ObjectIdentifier, Option<asn1::Tlv<'a>>),
+}
+
+// RFC 9337 Section 7.3
+#[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Eq, Hash, Clone, Debug)]
+pub struct Gost3412EncryptionParams<'a> {
+    pub ukm: &'a [u8],
 }
 
 #[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, PartialEq, Eq, Clone)]

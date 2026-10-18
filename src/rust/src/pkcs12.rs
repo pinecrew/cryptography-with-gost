@@ -224,6 +224,8 @@ fn decode_encryption_algorithm<'a>(
             pbe::EncryptionAlgorithm::PBESHA1And3KeyTripleDESCBC
         } else if key_cert_alg.is(&types::PBES_PBESV2SHA256ANDAES256CBC.get(py)?) {
             pbe::EncryptionAlgorithm::PBESv2SHA256AndAES256CBC
+        } else if let Some(gost) = gost_encryption_algorithm(py, &key_cert_alg)? {
+            gost
         } else {
             assert!(key_cert_alg.is_none());
             pbe::EncryptionAlgorithm::PBESv2SHA256AndAES256CBC
@@ -233,6 +235,14 @@ fn decode_encryption_algorithm<'a>(
             .getattr(pyo3::intern!(py, "_hmac_hash"))?
             .extract()?
         {
+            if cipher.is_gost() {
+                return Err(CryptographyError::from(
+                    pyo3::exceptions::PyValueError::new_err(
+                        "hmac_hash cannot be set with GOST PBES algorithms: RFC 9548 \
+                         mandates HMAC-GOST R 34.11-2012 (512 bit) for the PFX MAC",
+                    ),
+                ));
+            }
             v
         } else {
             default_hmac_alg
@@ -270,6 +280,41 @@ fn decode_encryption_algorithm<'a>(
         Err(CryptographyError::from(
             pyo3::exceptions::PyValueError::new_err("Unsupported key encryption type"),
         ))
+    }
+}
+
+/// Maps the GOST members of `PBES` to the RFC 9337 encryption schemes.
+fn gost_encryption_algorithm(
+    py: pyo3::Python<'_>,
+    key_cert_alg: &pyo3::Bound<'_, pyo3::PyAny>,
+) -> CryptographyResult<Option<pbe::EncryptionAlgorithm>> {
+    let is_kuznyechik =
+        key_cert_alg.is(&types::PBES_PBESV2STREEBOG512ANDKUZNYECHIKCTRACPKM.get(py)?);
+    let is_magma = key_cert_alg.is(&types::PBES_PBESV2STREEBOG512ANDMAGMACTRACPKM.get(py)?);
+    if !is_kuznyechik && !is_magma {
+        return Ok(None);
+    }
+    cfg_if::cfg_if! {
+        if #[cfg(not(any(
+            CRYPTOGRAPHY_IS_LIBRESSL,
+            CRYPTOGRAPHY_IS_BORINGSSL,
+            CRYPTOGRAPHY_IS_AWSLC
+        )))] {
+            let cipher = if is_kuznyechik {
+                cryptography_openssl::gost::CtrAcpkmCipher::Kuznyechik
+            } else {
+                cryptography_openssl::gost::CtrAcpkmCipher::Magma
+            };
+            Ok(Some(
+                pbe::EncryptionAlgorithm::PBESv2GostR3411_2012_512AndCtrAcpkm(cipher),
+            ))
+        } else {
+            Err(CryptographyError::from(
+                exceptions::UnsupportedAlgorithm::new_err(
+                    "GOST PBES algorithms require OpenSSL with the GOST provider",
+                ),
+            ))
+        }
     }
 }
 
@@ -364,6 +409,12 @@ fn serialize_safebags<'p>(
 
     let auth_safe_content = asn1::write_single(&asn1::SequenceOfWriter::new(auth_safe_contents))?;
 
+    if let Some(e) = &encryption_details.encryption_algorithm {
+        if e.is_gost() {
+            return serialize_gost_pfx(py, &auth_safe_content, password, encryption_details);
+        }
+    }
+
     let salt =
         crate::backend::rand::get_rand_bytes(py, 8)?.extract::<pyo3::pybacked::PyBackedBytes>()?;
     let mac_algorithm_md =
@@ -406,6 +457,62 @@ fn serialize_safebags<'p>(
         }),
     };
     Ok(pyo3::types::PyBytes::new(py, &asn1::write_single(&p12)?))
+}
+
+/// Wraps `auth_safe_content` into a PFX protected by the RFC 9548 integrity
+/// scheme: HMAC_GOSTR3411_2012_512 keyed with the last 32 octets of
+/// PBKDF2(P, S, c, 96).
+fn serialize_gost_pfx<'p>(
+    py: pyo3::Python<'p>,
+    auth_safe_content: &[u8],
+    password: &str,
+    encryption_details: &KeySerializationEncryption<'_>,
+) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+    cfg_if::cfg_if! {
+        if #[cfg(not(any(
+            CRYPTOGRAPHY_IS_LIBRESSL,
+            CRYPTOGRAPHY_IS_BORINGSSL,
+            CRYPTOGRAPHY_IS_AWSLC
+        )))] {
+            // RFC 9548 Section 8 recommends at least 32 octets.
+            let salt = crate::backend::rand::get_rand_bytes(py, 32)?
+                .extract::<pyo3::pybacked::PyBackedBytes>()?;
+            let mac_digest = pbe::gost_pfx_mac(
+                password.as_bytes(),
+                &salt,
+                encryption_details.mac_kdf_iter,
+                auth_safe_content,
+            )?;
+            let p12 = cryptography_x509::pkcs12::Pfx {
+                version: 3,
+                auth_safe: cryptography_x509::pkcs7::ContentInfo {
+                    _content_type: asn1::DefinedByMarker::marker(),
+                    content: cryptography_x509::pkcs7::Content::Data(Some(asn1::Explicit::new(
+                        auth_safe_content,
+                    ))),
+                },
+                mac_data: Some(cryptography_x509::pkcs12::MacData {
+                    mac: cryptography_x509::pkcs7::DigestInfo {
+                        // RFC 9548 Section 7: parameters are omitted.
+                        algorithm: cryptography_x509::common::AlgorithmIdentifier {
+                            oid: asn1::DefinedByMarker::marker(),
+                            params:
+                                cryptography_x509::common::AlgorithmParameters::GostR3411_2012_512(
+                                    None,
+                                ),
+                        },
+                        digest: &mac_digest,
+                    },
+                    salt: &salt,
+                    iterations: encryption_details.mac_kdf_iter,
+                }),
+            };
+            Ok(pyo3::types::PyBytes::new(py, &asn1::write_single(&p12)?))
+        } else {
+            let _ = (py, auth_safe_content, password, encryption_details);
+            unreachable!("GOST PBES algorithms are rejected earlier")
+        }
+    }
 }
 
 #[pyo3::pyfunction]

@@ -22,6 +22,15 @@ from cryptography.hazmat.primitives.hashes import HashAlgorithm
 class PBES(utils.Enum):
     PBESv1SHA1And3KeyTripleDESCBC = "PBESv1 using SHA1 and 3-Key TripleDES"
     PBESv2SHA256AndAES256CBC = "PBESv2 using SHA256 PBKDF2 and AES256 CBC"
+    # RFC 9337 / RFC 9548. Require the GOST provider (gostprov); the PFX MAC
+    # is always HMAC-GOST R 34.11-2012 (512 bit), so hmac_hash must not be set.
+    PBESv2Streebog512AndKuznyechikCTRACPKM = (
+        "PBESv2 using GOST R 34.11-2012 (512 bit) PBKDF2 and Kuznyechik "
+        "CTR-ACPKM"
+    )
+    PBESv2Streebog512AndMagmaCTRACPKM = (
+        "PBESv2 using GOST R 34.11-2012 (512 bit) PBKDF2 and Magma CTR-ACPKM"
+    )
 
 
 class KeySerializationEncryption(metaclass=abc.ABCMeta):

@@ -79,6 +79,16 @@ pub static PBES_PBESV2SHA256ANDAES256CBC: LazyPyImport = LazyPyImport::new(
     &["PBES", "PBESv2SHA256AndAES256CBC"],
 );
 
+pub static PBES_PBESV2STREEBOG512ANDKUZNYECHIKCTRACPKM: LazyPyImport = LazyPyImport::new(
+    "cryptography.hazmat.primitives.serialization.pkcs12",
+    &["PBES", "PBESv2Streebog512AndKuznyechikCTRACPKM"],
+);
+
+pub static PBES_PBESV2STREEBOG512ANDMAGMACTRACPKM: LazyPyImport = LazyPyImport::new(
+    "cryptography.hazmat.primitives.serialization.pkcs12",
+    &["PBES", "PBESv2Streebog512AndMagmaCTRACPKM"],
+);
+
 pub static SERIALIZE_SSH_PRIVATE_KEY: LazyPyImport = LazyPyImport::new(
     "cryptography.hazmat.primitives.serialization.ssh",
     &["_serialize_ssh_private_key"],
