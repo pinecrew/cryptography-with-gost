@@ -177,6 +177,10 @@ pub fn parse_public_key(data: &[u8]) -> KeyParsingResult<ParsedPublicKey> {
             .map_err(|_| KeyParsingError::InvalidKey)?,
         )),
 
+        _ if crate::gost::is_gost_key_oid(k.algorithm.oid()) => Ok(ParsedPublicKey::Pkey(
+            crate::gost::parse_public_key(data, k.algorithm.oid())?,
+        )),
+
         _ => Err(KeyParsingError::UnsupportedKeyType(
             k.algorithm.oid().clone(),
         )),
@@ -186,6 +190,15 @@ pub fn parse_public_key(data: &[u8]) -> KeyParsingResult<ParsedPublicKey> {
 pub fn serialize_public_key(
     pkey: &openssl::pkey::PKeyRef<impl openssl::pkey::HasPublic>,
 ) -> KeySerializationResult<Vec<u8>> {
+    #[cfg(not(any(
+        CRYPTOGRAPHY_IS_LIBRESSL,
+        CRYPTOGRAPHY_IS_BORINGSSL,
+        CRYPTOGRAPHY_IS_AWSLC
+    )))]
+    if cryptography_openssl::gost::is_gost_pkey(pkey) {
+        return crate::gost::serialize_public_key(pkey);
+    }
+
     let p_bytes;
     let q_bytes;
     let g_bytes;

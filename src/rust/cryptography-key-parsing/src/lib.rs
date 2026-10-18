@@ -8,6 +8,7 @@
 
 pub mod dsa;
 pub mod ec;
+mod gost;
 pub mod pbe;
 pub mod pem;
 pub mod pkcs8;

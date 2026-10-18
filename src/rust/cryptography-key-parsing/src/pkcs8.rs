@@ -210,6 +210,10 @@ pub fn parse_private_key(data: &[u8]) -> KeyParsingResult<ParsedPrivateKey> {
             ))
         }
 
+        _ if crate::gost::is_gost_key_oid(k.algorithm.oid()) => Ok(ParsedPrivateKey::Pkey(
+            crate::gost::parse_private_key(data, k.algorithm.oid())?,
+        )),
+
         _ => Err(KeyParsingError::UnsupportedKeyType(
             k.algorithm.oid().clone(),
         )),
@@ -438,6 +442,18 @@ pub fn parse_encrypted_private_key(
 }
 
 pub fn serialize_private_key(key: &ParsedPrivateKey) -> crate::KeySerializationResult<Vec<u8>> {
+    #[cfg(not(any(
+        CRYPTOGRAPHY_IS_LIBRESSL,
+        CRYPTOGRAPHY_IS_BORINGSSL,
+        CRYPTOGRAPHY_IS_AWSLC
+    )))]
+    {
+        let ParsedPrivateKey::Pkey(pkey) = key;
+        if cryptography_openssl::gost::is_gost_pkey(pkey) {
+            return crate::gost::serialize_private_key(pkey);
+        }
+    }
+
     let p_bytes;
     let q_bytes;
     let g_bytes;
