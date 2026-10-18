@@ -181,3 +181,42 @@ pub const HMAC_WITH_SHA512_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 840, 1
 
 pub const PRIME_FIELD_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 840, 10045, 1, 1);
 pub const CHARACTERISTIC_TWO_FIELD_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 840, 10045, 1, 2);
+
+// GOST R 34.10 public key algorithms
+pub const GOST_R3410_2001_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 643, 2, 2, 19);
+pub const GOST_R3410_2012_256_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 643, 7, 1, 1, 1, 1);
+pub const GOST_R3410_2012_512_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 643, 7, 1, 1, 1, 2);
+
+// GOST R 34.10 signature algorithms
+pub const GOST_R3411_94_WITH_R3410_2001_OID: asn1::ObjectIdentifier =
+    asn1::oid!(1, 2, 643, 2, 2, 3);
+pub const GOST_R3410_2012_256_SIGNATURE_OID: asn1::ObjectIdentifier =
+    asn1::oid!(1, 2, 643, 7, 1, 1, 3, 2);
+pub const GOST_R3410_2012_512_SIGNATURE_OID: asn1::ObjectIdentifier =
+    asn1::oid!(1, 2, 643, 7, 1, 1, 3, 3);
+
+pub fn is_gost_public_key_oid(oid: &asn1::ObjectIdentifier) -> bool {
+    [
+        GOST_R3410_2001_OID,
+        GOST_R3410_2012_256_OID,
+        GOST_R3410_2012_512_OID,
+    ]
+    .contains(oid)
+}
+
+pub fn is_gost_signature_oid(oid: &asn1::ObjectIdentifier) -> bool {
+    [
+        GOST_R3411_94_WITH_R3410_2001_OID,
+        GOST_R3410_2012_256_SIGNATURE_OID,
+        GOST_R3410_2012_512_SIGNATURE_OID,
+    ]
+    .contains(oid)
+}
+
+// GOST R 34.11-2012 and RFC 9337 password-based encryption (RFC 9548 PFX)
+pub const GOST_R3411_2012_512_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 643, 7, 1, 1, 2, 3);
+pub const HMAC_GOST_R3411_2012_512_OID: asn1::ObjectIdentifier =
+    asn1::oid!(1, 2, 643, 7, 1, 1, 4, 2);
+pub const MAGMA_CTR_ACPKM_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 643, 7, 1, 1, 5, 1, 1);
+pub const KUZNYECHIK_CTR_ACPKM_OID: asn1::ObjectIdentifier =
+    asn1::oid!(1, 2, 643, 7, 1, 1, 5, 2, 1);
