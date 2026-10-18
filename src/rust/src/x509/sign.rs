@@ -355,6 +355,25 @@ pub(crate) fn verify_signature_with_signature_algorithm<'p>(
     signature: &[u8],
     data: &[u8],
 ) -> CryptographyResult<()> {
+    // GOST R 34.10 keys hash the data themselves with the digest mandated by
+    // the key, so neither hash nor padding has to be derived here.
+    #[cfg(not(any(
+        CRYPTOGRAPHY_IS_LIBRESSL,
+        CRYPTOGRAPHY_IS_BORINGSSL,
+        CRYPTOGRAPHY_IS_AWSLC
+    )))]
+    if issuer_public_key.is_instance_of::<crate::backend::gost::GostPublicKey>() {
+        if !cryptography_x509::oid::is_gost_signature_oid(signature_algorithm.oid()) {
+            return Err(CryptographyError::from(
+                pyo3::exceptions::PyValueError::new_err(
+                    "Signature algorithm does not match issuer key type",
+                ),
+            ));
+        }
+        issuer_public_key.call_method1(pyo3::intern!(py, "verify"), (signature, data))?;
+        return Ok(());
+    }
+
     let key_type = identify_public_key_type(py, issuer_public_key.clone())?;
     let sig_key_type = identify_key_type_for_algorithm_params(&signature_algorithm.params)?;
     if key_type != sig_key_type {
