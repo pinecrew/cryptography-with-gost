@@ -543,6 +543,9 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         if !self
             .permitted_public_key_algorithms
             .contains(&issuer.certificate().tbs_cert.spki.algorithm)
+            && !cryptography_x509::oid::is_gost_public_key_oid(
+                issuer.certificate().tbs_cert.spki.algorithm.oid(),
+            )
         {
             return Err(ValidationError::new(ValidationErrorKind::Other(format!(
                 "Forbidden public key algorithm: {:?}",
@@ -559,6 +562,9 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
         if !self
             .permitted_signature_algorithms
             .contains(&child.certificate().signature_alg)
+            && !cryptography_x509::oid::is_gost_signature_oid(
+                child.certificate().signature_alg.oid(),
+            )
         {
             return Err(ValidationError::new(ValidationErrorKind::Other(format!(
                 "Forbidden signature algorithm: {:?}",
