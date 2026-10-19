@@ -13,6 +13,7 @@ fn main() {
     // openssl-sys (which cargo tracks as a dependency on its own).
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CRYPTOGRAPHY_BUILD_OPENSSL_NO_LEGACY");
+    println!("cargo:rerun-if-env-changed=CRYPTOGRAPHY_GOST_STATIC_LIB_DIR");
 
     pyo3_build_config::use_pyo3_cfgs();
 
@@ -52,6 +53,17 @@ fn main() {
     if let Ok(vars) = env::var("DEP_OPENSSL_CONF") {
         for var in vars.split(',') {
             println!("cargo:rustc-cfg=CRYPTOGRAPHY_OSSLCONF=\"{var}\"");
+        }
+    }
+
+    // Link gostprov (gost-engine) statically and register it as a built-in
+    // provider. The directory must contain libgostprov.a with the provider
+    // and all its gost-engine dependencies merged into one archive.
+    if let Ok(dir) = env::var("CRYPTOGRAPHY_GOST_STATIC_LIB_DIR") {
+        if !dir.is_empty() {
+            println!("cargo:rustc-link-search=native={dir}");
+            println!("cargo:rustc-link-lib=static=gostprov");
+            println!("cargo:rustc-cfg=CRYPTOGRAPHY_GOST_BUILTIN");
         }
     }
 

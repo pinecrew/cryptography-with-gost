@@ -61,6 +61,55 @@ struct LoadedProviders {
     fips: Option<provider::Provider>,
 }
 
+// Registers the statically linked gostprov as a built-in provider, so that
+// the `try_load` below finds it without a module on disk.
+#[cfg(all(
+    CRYPTOGRAPHY_GOST_BUILTIN,
+    not(any(
+        CRYPTOGRAPHY_IS_LIBRESSL,
+        CRYPTOGRAPHY_IS_BORINGSSL,
+        CRYPTOGRAPHY_IS_AWSLC
+    ))
+))]
+fn register_builtin_gost() -> CryptographyResult<()> {
+    use std::ffi::{c_char, c_int, c_void};
+
+    type ProviderInitFn = unsafe extern "C" fn(
+        handle: *const c_void,
+        in_: *const c_void,
+        out: *mut *const c_void,
+        provctx: *mut *mut c_void,
+    ) -> c_int;
+
+    extern "C" {
+        fn GOST_provider_init(
+            handle: *const c_void,
+            in_: *const c_void,
+            out: *mut *const c_void,
+            provctx: *mut *mut c_void,
+        ) -> c_int;
+        fn OSSL_PROVIDER_add_builtin(
+            libctx: *mut c_void,
+            name: *const c_char,
+            init_fn: ProviderInitFn,
+        ) -> c_int;
+    }
+
+    // SAFETY: the name is a NUL-terminated string with static lifetime and
+    // GOST_provider_init has the OSSL_provider_init_fn signature.
+    let r = unsafe {
+        OSSL_PROVIDER_add_builtin(
+            std::ptr::null_mut(),
+            c"gostprov".as_ptr(),
+            GOST_provider_init,
+        )
+    };
+    if r != 1 {
+        return Err(openssl::error::ErrorStack::get().into());
+    }
+    Ok(())
+}
+
 #[pyo3::pyfunction]
 fn openssl_version() -> i64 {
     openssl::version::number()
@@ -107,12 +156,15 @@ fn _initialize_providers(py: pyo3::Python<'_>) -> CryptographyResult<LoadedProvi
     };
     let _default = provider::Provider::load(None, "default")?;
     // GOST algorithms come from the external `gostprov` provider
-    // (https://github.com/gost-engine/engine). Load it when it is installed
-    // in the OpenSSL modules directory (or `OPENSSL_MODULES`), unless
-    // disabled with CRYPTOGRAPHY_OPENSSL_NO_GOST.
+    // (https://github.com/gost-engine/engine). Load it when it is built in
+    // (CRYPTOGRAPHY_GOST_STATIC_LIB_DIR at build time) or installed in the
+    // OpenSSL modules directory (or `OPENSSL_MODULES`), unless disabled with
+    // CRYPTOGRAPHY_OPENSSL_NO_GOST.
     let load_gost =
         !env::var("CRYPTOGRAPHY_OPENSSL_NO_GOST").is_ok_and(|v| !v.is_empty() && v != "0");
     let gost = if load_gost {
+        #[cfg(CRYPTOGRAPHY_GOST_BUILTIN)]
+        register_builtin_gost()?;
         let result = provider::Provider::try_load(None, "gostprov", true);
         // A missing provider is not an error, drop the error queue entries.
         openssl::error::ErrorStack::get();
