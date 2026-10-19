@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: citrux <369565@gmail.com>
+Date: Sun, 18 Oct 2026 17:22:34 +0300
+Subject: [PATCH] evp: probe AlgorithmIdentifier parameters only for
+ third-party providers
+
+
+The probe added by the previous patch passes the cipher AlgorithmIdentifier
+parameters to every provider cipher. Ciphers of the built-in providers
+(default, legacy, fips, base) ignore the unknown parameter and report
+success, so the mode-based decoding is skipped and the IV is not taken from
+the AlgorithmIdentifier: PBES2 with AES-256-CBC fails to decrypt.
+
+Apply the probe only to ciphers of other providers (gostprov).
+
+Upstream-Status: pending (gost-engine)
+---
+ crypto/evp/evp_lib.c | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/crypto/evp/evp_lib.c b/crypto/evp/evp_lib.c
+index e799305a42d8e5863403e89bf441ae983a621103..a751570943fcb35c22b7b3a60589895d9c576207 100644
+--- a/crypto/evp/evp_lib.c
++++ b/crypto/evp/evp_lib.c
+@@ -78,6 +78,26 @@ int EVP_CIPHER_set_asn1_iv(EVP_CIPHER_CTX *c, ASN1_TYPE *type)
+     return i;
+ }
+ 
++/*
++ * Ciphers of the built-in providers ignore unknown OSSL_PARAMs and report
++ * success, so the AlgorithmIdentifier probe below must not be applied to
++ * them: it would skip the IV handling for AES & co.  Only third-party
++ * providers (gostprov) get the probe.
++ */
++static int evp_cipher_is_external(const EVP_CIPHER *cipher)
++{
++    const char *name;
++
++    if (cipher->prov == NULL)
++        return 0;
++    name = ossl_provider_name(cipher->prov);
++    return name != NULL
++        && strcmp(name, "default") != 0
++        && strcmp(name, "legacy") != 0
++        && strcmp(name, "fips") != 0
++        && strcmp(name, "base") != 0;
++}
++
+ int evp_cipher_param_to_asn1_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
+     evp_cipher_aead_asn1_params *asn1_params)
+ {
+@@ -96,7 +116,7 @@ int evp_cipher_param_to_asn1_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
+      * needing EVP_CIPH_FLAG_CUSTOM_ASN1 on cipher->flags, which has
+      * no provider-side mechanism to set in OpenSSL 3.x.
+      */
+-    if (cipher->prov != NULL) {
++    if (evp_cipher_is_external(cipher)) {
+         X509_ALGOR alg;
+         alg.algorithm = NULL;
+         alg.parameter = type;
+@@ -176,7 +196,7 @@ int evp_cipher_asn1_to_param_ex(EVP_CIPHER_CTX *c, ASN1_TYPE *type,
+      * alg_id_param / algorithm-id-params setter first. If unhandled,
+      * fall through to the original mode-based decoding.
+      */
+-    if (cipher->prov != NULL) {
++    if (evp_cipher_is_external(cipher)) {
+         X509_ALGOR alg;
+         alg.algorithm = NULL;
+         alg.parameter = type;

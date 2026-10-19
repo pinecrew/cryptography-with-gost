@@ -1,0 +1,54 @@
+# Конфигурация cibuildwheel для cryptography-with-gost. Передаётся через
+# --config-file, pyproject.toml upstream не меняется. Перед сборкой дерево
+# готовится сценарием gost/stage.sh.
+#
+# OpenSSL и gostprov собираются один раз на платформу (before-all) и
+# линкуются в _rust.abi3.so статически; колесо не зависит от внешней
+# libcrypto.
+
+[tool.cibuildwheel]
+# Одно колесо abi3 (cp311-abi3) на платформу. На остальных версиях Python
+# cibuildwheel не пересобирает его, а устанавливает и прогоняет тесты.
+build = ["cp311-*", "cp314-*"]
+skip = ["*-musllinux_*"]
+archs = ["native"]
+config-settings = { "build-args" = "--features=pyo3/abi3-py311" }
+# Окружение тестов создаётся virtualenv с pip: test-command устанавливает
+# векторы из дерева.
+build-frontend = "build"
+
+# before-all и environment задаются в разделах платформ: раздел платформы
+# заменяет общее значение, а не дополняет его. Зависимости собираются в
+# $HOME/gost-deps (GOST_DEPS_DIR) и подключаются через OPENSSL_DIR и
+# CRYPTOGRAPHY_GOST_STATIC_LIB_DIR.
+
+# Полный набор тестов cryptography, включая ГОСТ-тесты серии. Векторы
+# устанавливаются из дерева: в них есть векторы ГОСТ, которых нет на PyPI.
+test-requires = [
+    "pytest>=7.4.0",
+    "pytest-benchmark>=4.0",
+    "pytest-xdist>=3.5.0",
+    "pretend>=0.7",
+    "certifi>=2024",
+]
+test-command = [
+    "python -m pip install {project}/vectors",
+    "python -m pytest -n auto {project}/tests",
+    "python -c \"from cryptography.hazmat.backends.openssl.backend import backend; assert backend.gost_supported(), 'gostprov is not loaded'\"",
+]
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+# Rust и модули Perl, нужные Configure OpenSSL, в образе manylinux.
+before-all = [
+    "dnf install -y perl perl-IPC-Cmd",
+    "curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal",
+    "bash {project}/gost/build-deps.sh",
+]
+environment = { PATH = "$HOME/.cargo/bin:$PATH", GOST_DEPS_DIR = "$HOME/gost-deps", OPENSSL_DIR = "$HOME/gost-deps/prefix", OPENSSL_STATIC = "1", CRYPTOGRAPHY_GOST_STATIC_LIB_DIR = "$HOME/gost-deps/prefix/lib" }
+
+[tool.cibuildwheel.macos]
+before-all = "bash {project}/gost/build-deps.sh"
+# Одна и та же минимальная версия macOS для OpenSSL, gost-engine и колеса.
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0", GOST_DEPS_DIR = "$HOME/gost-deps", OPENSSL_DIR = "$HOME/gost-deps/prefix", OPENSSL_STATIC = "1", CRYPTOGRAPHY_GOST_STATIC_LIB_DIR = "$HOME/gost-deps/prefix/lib" }

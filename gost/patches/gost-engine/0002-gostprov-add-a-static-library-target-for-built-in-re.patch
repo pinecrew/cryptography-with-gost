@@ -1,0 +1,59 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: citrux <369565@gmail.com>
+Date: Mon, 19 Oct 2026 16:44:17 +0300
+Subject: [PATCH] gostprov: add a static library target for built-in
+ registration
+
+GOST_BUILD_STATIC_PROVIDER (OFF by default) adds the gost_prov_static
+target: the provider sources compiled with BUILDING_PROVIDER_AS_LIBRARY,
+so that the entry point is GOST_provider_init. An application that links
+OpenSSL statically can then link the provider into the same binary and
+register it with OSSL_PROVIDER_add_builtin(). A loadable module cannot be
+used in that case: it would bring its own copy of libcrypto.
+
+Upstream-Status: pending
+---
+ CMakeLists.txt       |  1 +
+ cmake/provider.cmake | 17 +++++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 08b85cd85061dc54ce9a76f4c4ea735a75c7ded2..33f46454f1f9b461ac8207747a5e066cc4edd645 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -41,6 +41,7 @@ check_have_engine_api(HAVE_ENGINE_API)
+ option(GOST_BUILD_ENGINE        "Build gost engine module"         ${HAVE_ENGINE_API})
+ option(GOST_BUILD_STATIC_ENGINE "Build gost engine static library" OFF)
+ option(GOST_BUILD_PROVIDER      "Build gost provider module"       ON)
++option(GOST_BUILD_STATIC_PROVIDER "Build gost provider static library" OFF)
+ 
+ if((GOST_BUILD_ENGINE OR GOST_BUILD_STATIC_ENGINE) AND NOT HAVE_ENGINE_API)
+   message(FATAL_ERROR
+diff --git a/cmake/provider.cmake b/cmake/provider.cmake
+index 23b66366a56c068d8e17f609038b5ee14780166b..d0ad125b3d048255cccb77041d23faf7c507d51f 100644
+--- a/cmake/provider.cmake
++++ b/cmake/provider.cmake
+@@ -41,6 +41,23 @@ if (NOT MSVC)
+   target_link_libraries(lib_gost_prov PRIVATE gost_core libprov)
+ endif()
+ 
++if (GOST_BUILD_STATIC_PROVIDER)
++  # The GOST provider as a static library, for applications that link
++  # OpenSSL statically and register the provider with
++  # OSSL_PROVIDER_add_builtin(..., GOST_provider_init). The archive does not
++  # include gost_core, the hash and cipher libraries or libprov; they must
++  # be linked as well.
++  add_library(gost_prov_static STATIC
++    ${GOST_PROV_SOURCE_FILES}
++  )
++  set_target_properties(gost_prov_static PROPERTIES
++    OUTPUT_NAME "gostprov_static"
++    POSITION_INDEPENDENT_CODE ON
++    COMPILE_DEFINITIONS "BUILDING_GOST_PROVIDER;BUILDING_PROVIDER_AS_LIBRARY;OPENSSL_NO_DYNAMIC_ENGINE"
++    )
++  target_link_libraries(gost_prov_static PRIVATE gost_core libprov)
++endif()
++
+ install(TARGETS gost_prov EXPORT GostProviderConfig
+         LIBRARY  DESTINATION ${OPENSSL_MODULES_DIR}
+         RUNTIME  DESTINATION ${OPENSSL_MODULES_DIR})
